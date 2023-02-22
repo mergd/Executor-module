@@ -3,9 +3,12 @@ pragma solidity >=0.7.0 <0.9.0;
 
 import "./deps/Enum.sol";
 import "./deps/SignatureDecoder.sol";
+import "./deps/SelfAuthorized.sol";
 import "./deps/ISignatureValidator.sol";
+import "./deps/SecuredTokenTransfer.sol";
 import {SafeMath} from "./deps/SafeMath.sol";
 import "./OwnerManager.sol";
+import "./GuardManager.sol";
 
 interface GnosisSafe {
     /// @dev Allows a Module to execute a Safe transaction without any further confirmations.
@@ -21,9 +24,14 @@ interface GnosisSafe {
     ) external returns (bool success);
 }
 
-contract ExecutorModule is SignatureDecoder, OwnerManager {
+contract ExecutorModule is
+    SignatureDecoder,
+    GuardManager,
+    OwnerManager,
+    SecuredTokenTransfer
+{
     using SafeMath for uint256;
-    string public constant NAME = "Gnosis Board Module";
+    string public constant NAME = "Gnosis Executor Module";
     string public constant VERSION = "1.0";
     // keccak256(
     //     "EIP712Domain(uint256 chainId,address verifyingContract)"
@@ -43,6 +51,7 @@ contract ExecutorModule is SignatureDecoder, OwnerManager {
     event ExecutionSuccess(bytes32 txHash, uint256 payment);
 
     uint256 public nonce;
+    address immutable safe;
 
     bytes4 internal constant EIP1271_MAGIC_VALUE = 0x20c13b0b;
     // Mapping to keep track of all message hashes that have been approved by ALL REQUIRED owners
@@ -51,7 +60,10 @@ contract ExecutorModule is SignatureDecoder, OwnerManager {
     mapping(address => mapping(bytes32 => uint256)) public approvedHashes;
 
     // Set up the Gnosis Safe, add this module, and then transfer ownership to the Board
-    constructor(address safe_) OwnerManager(safe_) {}
+    constructor(address safe_) {
+        setSafe(safe_);
+        safe = safe_;
+    }
 
     /// @dev Allows to execute a Safe transaction confirmed by required number of owners and then pays the account that submitted the transaction.
     ///      Note: The fees are always transferred, even if the user transaction fails.
@@ -100,17 +112,54 @@ contract ExecutorModule is SignatureDecoder, OwnerManager {
             txHash = keccak256(txHashData);
             checkNSignatures(txHash, txHashData, signatures, getThreshold());
         }
-
+        address guard = getGuard();
+        {
+            if (guard != address(0)) {
+                Guard(guard).checkTransaction(
+                    // Transaction info
+                    to,
+                    value,
+                    data,
+                    operation,
+                    safeTxGas,
+                    // Payment info
+                    baseGas,
+                    gasPrice,
+                    gasToken,
+                    refundReceiver,
+                    // Signature info
+                    signatures,
+                    msg.sender
+                );
+            }
+        }
+        // We require some gas to emit the events (at least 2500) after the execution and some to perform code until the execution (500)
+        // We also include the 1/64 in the check that is not send along with a call to counteract potential shortings because of EIP-150
         require(
-            GnosisSafe(safe).execTransactionFromModule(
+            gasleft() >= ((safeTxGas * 64) / 63).max(safeTxGas + 2500) + 500,
+            "GS010"
+        );
+        // Use scope here to limit variable lifetime and prevent `stack too deep` errors
+        {
+            // Removed gasprice check
+            success = GnosisSafe(safe).execTransactionFromModule(
                 to,
                 value,
                 data,
                 operation
-            ),
-            "Could not execute token transfer"
-        );
-        return true;
+            );
+            // If no safeTxGas and no gasPrice was set (e.g. both are 0), then the internal tx is required to be successful
+            // This makes it possible to use `estimateGas` without issues, as it searches for the minimum gas where the tx doesn't revert
+            require(success || safeTxGas != 0 || gasPrice != 0, "GS013");
+
+            if (success) emit ExecutionSuccess(txHash, 0);
+            else emit ExecutionFailure(txHash, 0);
+        }
+        {
+            if (guard != address(0)) {
+                Guard(guard).checkAfterExecution(txHash, success);
+            }
+        }
     }
 
     function domainSeparator() public view returns (bytes32) {

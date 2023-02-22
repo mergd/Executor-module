@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 pragma solidity >=0.7.0 <0.9.0;
 
+import "./deps/SelfAuthorized.sol";
+
 /**
  * @title OwnerManager - Manages Safe owners and a threshold to authorize transactions.
  * @dev Uses a linked list to store the owners because the code generate by the solidity compiler
@@ -8,7 +10,7 @@ pragma solidity >=0.7.0 <0.9.0;
  * @author Stefan George - @Georgi87
  * @author Richard Meissner - @rmeissner
  */
-contract OwnerManager {
+contract OwnerManager is SelfAuthorized {
     event AddedOwner(address owner);
     event RemovedOwner(address owner);
     event ChangedThreshold(uint256 threshold);
@@ -18,16 +20,6 @@ contract OwnerManager {
     mapping(address => address) internal owners;
     uint256 internal ownerCount;
     uint256 internal threshold;
-    address public safe;
-
-    constructor(address safe_) {
-        safe = safe_;
-    }
-
-    modifier authorized() {
-        require(msg.sender == safe, "GS203");
-        _;
-    }
 
     /**
      * @notice Sets the initial storage of the contract.

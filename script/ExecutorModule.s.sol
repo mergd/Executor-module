@@ -12,6 +12,7 @@ contract ExecutorScript is Script {
         address safeAddress = vm.envAddress("SAFE_ADDRESS");
         vm.broadcast(deployerPrivateKey);
         ExecutorModule exec = new ExecutorModule(safeAddress);
+        // Add module to multisig, add Guard modules as well.
         vm.stopBroadcast();
     }
 }
