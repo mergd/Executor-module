@@ -3,7 +3,7 @@ Allow for execution of arbitrary bytecode from approved members of a multisig, w
 
 Can be used in conjunction with transaction guard or other modules to limit scope of transactions that can be done by the multisig.
 
-Mostly code copied from the existing Safe contracts with minor modifications made where necessary. 
+Mostly code copied from the existing Safe contracts with minor modifications made where necessary – including removing the transaction refund mechanisms.
 
 Built using Foundry, use at your own risk :).
 
