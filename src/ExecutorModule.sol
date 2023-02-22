@@ -21,7 +21,7 @@ interface GnosisSafe {
     ) external returns (bool success);
 }
 
-contract GnosisBoard is SignatureDecoder, OwnerManager {
+contract ExecutorModule is SignatureDecoder, OwnerManager {
     using SafeMath for uint256;
     string public constant NAME = "Gnosis Board Module";
     string public constant VERSION = "1.0";
